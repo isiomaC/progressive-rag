@@ -106,10 +106,19 @@ a { color:var(--accent); text-decoration:none; }
 def build_report(cfg) -> None:
     results = json.loads(cfg.results_file.read_text())
     data_json = json.dumps(results).replace("</", "<\\/")
+    # model comparison: any results-*.json siblings (e.g. offline/deepseek/openai)
+    compares = []
+    for p in sorted(cfg.results_file.parent.glob("results-*.json")):
+        try:
+            c = json.loads(p.read_text())
+        except Exception:
+            continue
+        compares.append({"file": p.name, "meta": c["meta"], "variants": c["variants"]})
+    compare_json = json.dumps(compares).replace("</", "<\\/")
     phase_json = json.dumps(PHASE_ORDER)
     label_json = json.dumps(PHASE_LABEL)
     color_json = json.dumps(PHASE_COLOR)
-    html = _page(css=CSS, data=data_json, phase_order=phase_json,
+    html = _page(css=CSS, data=data_json, compare=compare_json, phase_order=phase_json,
                  phase_labels=label_json, phase_colors=color_json)
     cfg.site_dir.mkdir(parents=True, exist_ok=True)
     out = cfg.site_dir / "index.html"
@@ -117,7 +126,7 @@ def build_report(cfg) -> None:
     print(f"wrote {out} ({len(html) // 1024} KB)")
 
 
-def _page(css: str, data: str, phase_order: str, phase_labels: str, phase_colors: str) -> str:
+def _page(css: str, data: str, compare: str, phase_order: str, phase_labels: str, phase_colors: str) -> str:
     # NOTE: this is an f-string; JS braces are escaped as {{ / }} and the only
     # Python fields are the {css}/{data}/{phase_*} substitutions above.
     return f"""<!DOCTYPE html>
@@ -139,6 +148,9 @@ def _page(css: str, data: str, phase_order: str, phase_labels: str, phase_colors
 <main>
   <h2>The journey at a glance</h2>
   <div class="stepper" id="stepper"></div>
+
+  <h2>Model comparison <span style="color:var(--muted);font-size:13px;">— same harness, different generators</span></h2>
+  <div class="panel" id="model-compare"></div>
 
   <h2>Learning highlights</h2>
   <div class="grid cards" id="highlights"></div>
@@ -190,6 +202,7 @@ def _page(css: str, data: str, phase_order: str, phase_labels: str, phase_colors
 <footer id="footer"></footer>
 <script>
 const R = {data};
+const COMPARES = {compare};
 const PHASE_ORDER = {phase_order};
 const PHASE_LABELS = {phase_labels};
 const PHASE_COLORS = {phase_colors};
@@ -230,9 +243,67 @@ document.getElementById("stepper").innerHTML = PHASE_ORDER.map(p => {{
   </div>`;
 }}).join("");
 
+// ---------- model comparison ----------
+(function() {{
+  const runs = [{{ label: meta.llm === "offline" ? "offline (extractive)" : meta.llm, meta, variants: V }}]
+    .concat(COMPARES.map(c => ({{ label: c.meta.llm === "offline" ? "offline (extractive)" : c.meta.llm, meta: c.meta, variants: c.variants }})));
+  const el = document.getElementById("model-compare");
+  if (runs.length < 2) {{
+    el.innerHTML = `<p class="note">Only one run is present. Save additional runs as
+      <code>experiments/results-&lt;model&gt;.json</code> (e.g. <code>--out experiments/results-deepseek.json</code>)
+      and rebuild to see the model comparison.</p>`;
+    return;
+  }}
+  const keyRows = [
+    ["Answer correctness", "answer_correctness"],
+    ["Doc recall@5", "doc_recall"],
+    ["Hit rate", "hit_rate"],
+    ["MRR", "mrr"],
+    ["NDCG@5", "ndcg"],
+    ["Faithfulness (LLM judge)", "faithfulness_llm"],
+  ];
+  let rows = keyRows.map(([label, key]) => {{
+    const per = runs.map(run => {{
+      const vs = run.variants;
+      const present = vs.filter(v => typeof (v.metrics.overall[key]) === "number");
+      if (!present.length) return null;
+      const sum = present.reduce((a, v) => a + v.metrics.overall[key], 0);
+      return sum / present.length;
+    }});
+    const idxs = per.map((x, i) => x === null ? -1 : i).filter(i => i >= 0);
+    const bestIdx = idxs.length ? idxs.reduce((a, b) => per[b] > per[a] ? b : a) : -1;
+    return `<tr><td class="vname">${{label}}</td>${{per.map((x,i) =>
+      `<td class="${{i === bestIdx ? "win" : ""}}">${{x === null ? "—" : (x*100).toFixed(1)}}</td>`).join("")}}</tr>`;
+  }}).join("");
+  el.innerHTML = `
+    <table>
+      <tr><th>metric (mean across 16 variants)</th>${{runs.map(run =>
+        `<th>${{run.label}}<br><span style="font-weight:400;font-size:10px">${{run.meta.generated_at}}</span></th>`).join("")}}</tr>
+      ${{rows}}
+    </table>
+    <p class="note">The same 51 questions, the same retrievers, only the generator differs. The extractive
+    offline mode answers by quoting retrieved sentences (faithful by construction, correctness capped by
+    retrieval); live LLMs paraphrase and synthesize, which is why correctness jumps. The variant-level
+    comparison below shows every configuration side by side.</p>`;
+  // variant-level correctness table
+  const vnames = [...new Set(runs.flatMap(run => run.variants.map(v => v.name)))];
+  const vrows = vnames.map(n => {{
+    const per = runs.map(run => {{
+      const v = run.variants.find(x => x.name === n);
+      return v ? (v.metrics.overall.answer_correctness ?? 0) : null;
+    }});
+    const bestIdx = per.indexOf(Math.max(...per.filter(x => x !== null)));
+    return `<tr><td class="vname">${{n}}</td>${{per.map((x,i) =>
+      `<td class="${{i === bestIdx ? "win" : ""}}">${{x === null ? "—" : (x*100).toFixed(1)}}</td>`).join("")}}</tr>`;
+  }}).join("");
+  el.insertAdjacentHTML("beforeend", `
+    <div style="margin-top:18px"><div class="chart-title">Answer correctness by variant, per run</div>
+    <table><tr><th>variant</th>${{runs.map(run => `<th>${{run.label}}</th>`).join("")}}</tr>${{vrows}}</table></div>`);
+}})();
+
 // ---------- highlights ----------
 const base = byName["baseline"];
-const bestChunk = [...V].filter(v => v.phase === "2-chunking").sort((a,b) => m(b,"answer_correctness")-m(a,"answer_correctness"))[0];
+const bestChunkRank = [...V].filter(v => v.phase === "2-chunking").sort((a,b) => m(b,"mrr")-m(a,"mrr"))[0];
 const dBest = v => (m(v,"answer_correctness") - m(base,"answer_correctness")) / Math.max(0.001, m(base,"answer_correctness"));
 const rerank = byName["retr-hybrid-rerank"], hyde = byName["retr-hyde"];
 const graph = byName["graph"], agentic = byName["agentic"], selfrag = byName["self-rag"], adv = byName["advanced-combo"];
@@ -243,9 +314,10 @@ function card(tag, title, body, color) {{
   return `<div class="card"><div class="tag" style="color:${{color||"var(--muted)"}}">${{tag}}</div><h4>${{title}}</h4>${{body}}</div>`;
 }}
 const hi = [];
-hi.push(card("Phase 2 · biggest lever", "Chunking matters more than retriever tricks",
-  `<div class="big">${{pct(m(bestChunk,"answer_correctness"))}} <span style="font-size:14px;color:var(--muted)">best chunker</span></div>
-   <p><b>${{bestChunk.title}}</b> beats the fixed-size baseline on answer correctness while using the <i>same</i> retriever — a ${{(dBest(bestChunk)*100).toFixed(0)}}% relative gain. The single biggest lever in this whole project.</p>`, "#d29922"));
+hi.push(card("Phase 2 · biggest lever", "Chunking matters — watch the ranking, not just the answer",
+  `<div class="big">+${{((m(bestChunkRank,"mrr") - m(base,"mrr"))/Math.max(0.001,m(base,"mrr"))*100).toFixed(0)}}% <span style="font-size:14px;color:var(--muted)">MRR: ${{bestChunkRank.name}} vs fixed-size baseline</span></div>
+   <p>Sentence-aware recursive chunking lifts MRR ${{(m(bestChunkRank,"mrr")*100).toFixed(0)}}% vs ${{(m(base,"mrr")*100).toFixed(0)}}% with the <i>identical</i> retriever. The mechanism is in the diagnostics: fixed windows cut ~25% of corpus sentences in half, and on the questions they damage, sentence-aware chunking wins.
+   ${{meta.llm_offline ? "" : " With a live LLM the answer-correctness gap shrinks — the model infers across damaged context — which is itself the lesson: chunking buys most where the generator is weakest."}}</p>`, "#d29922"));
 hi.push(card("Phase 3 · best per ms", "Reranking buys the most per millisecond",
   `<div class="big">${{pct(m(rerank,"doc_recall"))}} <span style="font-size:14px;color:var(--muted)">hybrid+rerank doc recall</span></div>
    <p>Reranking lifts retrieval with no index change — costing ${{byName["retr-rerank"].latency.retrieval_ms_median.toFixed(0)}} ms/query on CPU (cross-encoder). HyDE and multi-query are gambles: HyDE scored ${{pct(m(hyde,"doc_recall"))}} doc recall vs ${{pct(m(base,"doc_recall"))}} baseline — the LLM's guess can backfire.</p>`, "#58a6ff"));
@@ -307,13 +379,16 @@ hbar(document.getElementById("chart-chunk"), chunkers,
   v => m(v, "answer_correctness"),
   {{ label: v => v.name, color: "#d29922" }});
 document.getElementById("chunk-why").innerHTML =
-  `<b>Semantic and parent-child chunking keep ideas intact.</b> Fixed windows slice through
-   boundaries: the answer to a question can start in one chunk and end in the next — no retriever
-   can recover that. Semantic chunking groups sentences by meaning; parent-child retrieves small
-   and generates big. Both beat fixed-size with the identical vector retriever.
-   <br><br>Also note the interaction: <b>reranking fixes <i>selection</i> errors, chunking fixes
-   <i>information</i> errors</b> — they compose, which is why the strongest single-hop
-   configuration pairs them.`;
+  `<b>Fixed windows cut information in half; sentence-aware chunking keeps it whole.</b> The boundary-integrity
+   diagnostic measures the damage directly: fixed windows split ~25% of corpus sentences, recursive ~24%,
+   semantic 0%, parent-child ~5%. A sentence cut across chunks is an answer no retriever can recover — which
+   is why recursive chunking ranks better (MRR +18% here) with the identical vector retriever, and why the
+   questions that fixed chunking damages score worse under fixed than under semantic chunking.
+   <br><br>Two honest caveats the experiments taught us: <b>(1) chunk size must scale to corpus size</b>
+   (we use 60 words on an 8k-word corpus, not the 500-word production norm), and <b>(2) strong generators
+   partially repair split chunks by inferring</b> — in live-LLM mode the answer-quality gaps shrink even
+   though the ranking gaps persist. Reranking fixes <i>selection</i> errors; chunking fixes
+   <i>information</i> errors — they compose, which is why the strongest configurations pair them.`;
 
 // ---------- retrieval chart ----------
 const retrs = ["retr-vector","retr-bm25","retr-hybrid","retr-multi-query","retr-hyde","retr-rerank","retr-hybrid-rerank"].map(n => byName[n]).filter(Boolean);
@@ -339,7 +414,7 @@ document.getElementById("comp-lat").innerHTML = `
     <tr><td class="vname">BM25 search</td><td>${{cl.bm25_search_ms.toFixed(2)}}</td></tr>
     <tr><td class="vname">hybrid retrieval</td><td>${{cl.hybrid_retrieval_ms.toFixed(2)}}</td></tr>
     <tr><td class="vname">hybrid + cross-encoder rerank</td><td>${{cl.hybrid_plus_rerank_ms.toFixed(1)}}</td></tr>
-    <tr><td class="vname">generation (offline extractive)</td><td>${{cl.generation_ms.toFixed(2)}}</td></tr>
+    <tr><td class="vname">generation (${{meta.llm_offline ? "offline extractive" : "live LLM"}})</td><td>${{cl.generation_ms.toFixed(2)}}</td></tr>
   </table>
   <p class="note">${{cl.note}}</p>`;
 document.getElementById("cost-panel").innerHTML = `<h3>Cost accounting ${{meta.llm_offline ? "(offline demo mode — zero API spend)" : "(live LLM)"}}</h3>
@@ -465,11 +540,14 @@ let rows = sortedV().map(v => {{
 }}).join("");
 document.getElementById("full-table").innerHTML = th + rows;
 document.getElementById("full-table").insertAdjacentHTML("afterend",
- `<p class="note">Faithfulness reads 100% across variants in offline mode by construction: the extractive
+ meta.llm_offline
+ ? `<p class="note">Faithfulness reads 100% across variants in offline mode by construction: the extractive
  generator answers with sentences lifted from the retrieved context, so every answer is trivially supported.
  It becomes discriminative with a live LLM — rerun with <code>--llm deepseek</code>/<code>--llm openai</code>
- (add <code>--judge</code> for LLM-judge scores). The tricky-question breakdown below still separates the
- variants, because declined answers ("I don't know") break the extractive pattern.</p>`);
+ (add <code>--judge</code> for LLM-judge scores).</p>`
+ : `<p class="note">Faithfulness ${{meta.llm_judge ? "here is the LLM-judge score (claim-level support vs context)" :
+ "here is the lexical support proxy (run with --judge for the LLM-judge version)"}}. The tricky-question
+ breakdown below separates the variants, because declined answers ("I don't know") break the supported-claim pattern.</p>`);
 
 // ---------- heatmap ----------
 const qids = Object.keys(V[0].per_question);
@@ -516,9 +594,9 @@ answer correctness (token F1 vs golden); LLM-judge variants activate automatical
 <p><b>Reproduce:</b> <code>pip install -r requirements.txt -r requirements-optional.txt</code> then
 <code>python scripts/run_experiments.py</code> (add <code>--llm deepseek</code> or <code>--llm openai</code> with a key
 in <code>.env</code>). This page is regenerated by <code>python site/build_report.py</code>.</p>
-<p><b>Honesty note (offline mode):</b> without an API key, answers come from a deterministic extractive
-generator and query transforms are lexical heuristics — numbers here are a <i>lower bound</i> on what live
-LLMs achieve, and the report labels them as such.</p>`;
+<p><b>${{meta.llm_offline ? "Honesty note (offline mode)" : "Live-LLM note"}}:</b> ${{meta.llm_offline ?
+ "answers come from a deterministic extractive generator and query transforms are lexical heuristics — numbers here are a lower bound on what live LLMs achieve, and the report labels them as such." :
+ "answers and query transforms were produced by a live LLM (" + meta.llm + ")" + (meta.llm_judge ? ", and the generation metrics include LLM-judge scores" : "") + ". Token costs are tracked per variant in the cost table."}}</p>`;
 
 document.getElementById("footer").innerHTML =
   `Progressive RAG Documentation Assistant · <a href="https://github.com/isiomaC/progressive-rag">github.com/isiomaC/progressive-rag</a> ·

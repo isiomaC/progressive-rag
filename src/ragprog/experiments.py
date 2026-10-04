@@ -87,18 +87,31 @@ def _evaluate_variant(
 
         t0 = time.perf_counter()
         try:
-            scored = retriever(item.question, k)
+            out = retriever(item.question, k)
+            agent_answer = None
+            if isinstance(out, tuple) and len(out) == 2:
+                scored, agent_answer = out
+            else:
+                scored = out
         except Exception as exc:
             scored = []
+            agent_answer = None
             print(f"[warn] {name} {item.id}: {type(exc).__name__}: {exc}")
         lat_retr.append((time.perf_counter() - t0) * 1000)
 
         got_chunks = [Chunk(id=s.id, doc_id=s.doc_id, text=s.text, start=0, end=len(s.text), parent_id=s.parent_id) for s in scored]
         context = "\n\n".join(c.text for c in got_chunks)
         ctx_words.append(sum(len(c.text.split()) for c in got_chunks))
-        t0 = time.perf_counter()
-        result = generator.generate(item.question, got_chunks)
-        lat_gen.append((time.perf_counter() - t0) * 1000)
+        if agent_answer is not None:
+            # Agents deliver their own answer (draft that passed critique, or
+            # an honest "I don't know"); do not re-generate over the final
+            # chunks — that would erase the agent's actual behavior.
+            result = agent_answer
+            lat_gen.append(0.0)
+        else:
+            t0 = time.perf_counter()
+            result = generator.generate(item.question, got_chunks)
+            lat_gen.append((time.perf_counter() - t0) * 1000)
 
         u = _usage_delta(llm.usage, llm_usage_before)
         usage_total.add(u)
@@ -394,8 +407,9 @@ def run_experiments(cfg: Config, llm: LLM | None = None, limit: int | None = Non
 
 
 def _run_agent(agent, question: str, k: int):
-    """Agents need their full run; map back to a scored-chunk list for the
-    shared evaluator, and stash the step log in the variant extra."""
+    """Agents deliver their own answer; the shared evaluator must score THAT
+    answer rather than re-generate over the final chunk list (re-generation
+    would erase the agent's behavior — routed answers, honest declines)."""
     result = agent.run(question, k)
     from .retrieval import ScoredChunk
     scored = [ScoredChunk(c.id, c.doc_id, c.text, 0.0, agent.name) for c in result.final_chunks]
@@ -404,7 +418,7 @@ def _run_agent(agent, question: str, k: int):
     _run_agent.logs[question] = {"n_steps": result.n_steps, "log": result.step_log,
                                  "used_retrieval": result.used_retrieval,
                                  "answer": result.answer.text}
-    return scored
+    return scored, result.answer
 
 
 def _run_challenges(cfg, llm, generator, docs, golden, idx_rec, idx_fixed,

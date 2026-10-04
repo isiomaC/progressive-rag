@@ -79,6 +79,15 @@ class LLM:
     def answer_with_context(self, question: str, context: str) -> tuple[str, Usage]:
         raise NotImplementedError
 
+    def answer_direct(self, question: str) -> tuple[str, Usage]:
+        """Answer WITHOUT any retrieved context (used by the agentic router
+        when it decides retrieval is not needed — the RAG prompt's
+        'only use the context' instruction must NOT apply here)."""
+        return self.complete(
+            "Answer the question directly and concisely. If you are not sure, "
+            "say you are not sure.\n\nQUESTION: " + question
+        )
+
     def rewrite(self, question: str) -> str:
         raise NotImplementedError
 

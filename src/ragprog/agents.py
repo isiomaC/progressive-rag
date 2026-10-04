@@ -43,7 +43,14 @@ class AgenticRAG:
         chunk_map: dict[str, Chunk] = {}
 
         if not self.llm.route(question):
-            result = self.generator.generate(question, [])
+            if self.llm.is_offline:
+                result = self.generator.generate(question, [])
+            else:
+                # No context to be faithful TO — answer from general knowledge
+                # instead of running the RAG prompt with an empty context
+                # (which would force an "I don't know").
+                text, usage = self.llm.answer_direct(question)
+                result = GenerationResult(text=text, chunk_ids=[], usage=usage, latency_s=0.0)
             return AgentResult(result, 0, False, [], ["routed: no retrieval needed"])
 
         query = self.llm.rewrite(question)

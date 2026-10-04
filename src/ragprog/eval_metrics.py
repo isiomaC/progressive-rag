@@ -162,12 +162,19 @@ def evaluate_question(
 
 
 def aggregate(per_question: list[dict], keys: list[str] | None = None) -> dict:
-    """Mean over questions for numeric keys only; empty list → zeros."""
+    """Mean over questions for numeric keys (None treated as missing); empty → {}."""
     if not per_question:
         return {}
     keys = keys or [k for k in per_question[0]]
-    numeric = [k for k in keys if isinstance(per_question[0].get(k), (int, float))]
-    return {k: sum(q.get(k, 0.0) for q in per_question) / len(per_question) for k in numeric}
+    numeric = [
+        k for k in keys
+        if any(isinstance(q.get(k), (int, float)) for q in per_question)
+    ]
+    return {
+        k: sum(q[k] for q in per_question if isinstance(q.get(k), (int, float)))
+        / len([q for q in per_question if isinstance(q.get(k), (int, float))])
+        for k in numeric
+    }
 
 
 def group_by_type(questions_meta: list[dict], metrics: dict[str, dict]) -> dict[str, dict]:
