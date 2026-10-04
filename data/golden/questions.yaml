@@ -1,0 +1,310 @@
+# Golden evaluation set for progressive-rag.
+# 50 questions: 30 single-hop, 8 multi-hop, 6 tricky, 6 comparative.
+# `docs` lists corpus files (by stem) that contain the ground truth.
+# A build script resolves concrete chunk ids per chunking strategy.
+items:
+  - id: q01
+    type: single-hop
+    docs: [01-intro-to-rag]
+    question: What are the five components of a naive RAG pipeline, in order?
+    answer: Loader, chunker, embedder, index, and retriever plus generator.
+
+  - id: q02
+    type: single-hop
+    docs: [01-intro-to-rag]
+    question: Which three problems does RAG solve when using an LLM alone?
+    answer: Hallucination, stale knowledge, and missing attribution/citations.
+
+  - id: q03
+    type: single-hop
+    docs: [02-chunking-strategies]
+    question: How does semantic chunking decide where a chunk ends?
+    answer: It breaks when the similarity between the sentence buffer and the next sentence falls below a threshold, set here as the 90th percentile of breakpoints in the document.
+
+  - id: q04
+    type: single-hop
+    docs: [02-chunking-strategies]
+    question: What chunk sizes does the small-to-big pattern use for children and parents?
+    answer: About 250 words for children and about 1024 words for parents in production corpora, scaled down to 50-word children and 250-word parents in this lab because its corpus is small.
+
+  - id: q05
+    type: single-hop
+    docs: [03-embeddings-and-vector-space]
+    question: Which embedding model does this project use locally, and how many dimensions does it produce?
+    answer: all-MiniLM-L6-v2, a sentence-transformer with 384 dimensions.
+
+  - id: q06
+    type: single-hop
+    docs: [03-embeddings-and-vector-space]
+    question: Why must query and chunk embeddings come from the same model?
+    answer: Each model produces its own vector space, so mixing query embeddings from one model with chunk embeddings from another makes distances meaningless.
+
+  - id: q07
+    type: single-hop
+    docs: [04-vector-stores-and-indexes]
+    question: Why is in-memory brute-force vector search acceptable for this project's corpus?
+    answer: The corpus has only a few thousand chunks; brute force is exact, and a single matrix-vector dot product takes only milliseconds at that scale.
+
+  - id: q08
+    type: single-hop
+    docs: [05-bm25-and-hybrid-retrieval]
+    question: What values do the BM25 parameters k1 and b typically take?
+    answer: k1 is typically 1.5 and b is typically 0.75.
+
+  - id: q09
+    type: single-hop
+    docs: [05-bm25-and-hybrid-retrieval]
+    question: What is reciprocal rank fusion and what constant does it conventionally use?
+    answer: RRF merges ranked lists by summing 1/(k + rank) across lists, with k conventionally set to 60; it needs no score calibration.
+
+  - id: q10
+    type: single-hop
+    docs: [05-bm25-and-hybrid-retrieval]
+    question: On what kind of query terms does BM25 beat vector search?
+    answer: Exact tokens such as identifiers, function names, error codes, version numbers, and configuration keys.
+
+  - id: q11
+    type: single-hop
+    docs: [06-query-transformation]
+    question: How does HyDE work, and why does it improve retrieval?
+    answer: HyDE asks the LLM to write a short hypothetical answer, embeds that answer, and retrieves chunks similar to it; it works because the guessed answer uses vocabulary closer to real documents than the raw question does.
+
+  - id: q12
+    type: single-hop
+    docs: [06-query-transformation]
+    question: In what order should query-transformation techniques be adopted on a budget?
+    answer: Query rewriting first (cheapest), then multi-query, then HyDE last because it is the riskiest.
+
+  - id: q13
+    type: single-hop
+    docs: [07-reranking]
+    question: Why are cross-encoders more accurate than bi-encoders but only usable on candidates?
+    answer: A cross-encoder reads the query-chunk pair jointly so the two interact inside the model, but that joint encoding is too slow to run over the whole corpus, so it only re-scores the top candidates.
+
+  - id: q14
+    type: single-hop
+    docs: [07-reranking]
+    question: What is the typical quality gain from reranking candidates?
+    answer: Reranking typically lifts hit rate and recall@k by a double-digit percentage over the raw retriever.
+
+  - id: q15
+    type: single-hop
+    docs: [08-parent-document-retrieval]
+    question: Why does small-to-big retrieval deduplicate parent chunks?
+    answer: Several child chunks often map to the same parent, and without deduplication the prompt wastes tokens repeating the same passage.
+
+  - id: q16
+    type: single-hop
+    docs: [08-parent-document-retrieval]
+    question: What is the strongest single-hop configuration found in this project?
+    answer: Parent-document chunking combined with a cross-encoder reranker.
+
+  - id: q17
+    type: single-hop
+    docs: [09-evaluation-metrics]
+    question: What is the difference between retrieval metrics and generation metrics?
+    answer: Retrieval metrics measure whether the right chunks were fetched, computable without an LLM against a golden set; generation metrics measure the final answer's quality and need a judge.
+
+  - id: q18
+    type: single-hop
+    docs: [09-evaluation-metrics]
+    question: What are the three generation metrics in the RAGAS triad?
+    answer: Faithfulness, answer relevancy, and answer correctness.
+
+  - id: q19
+    type: single-hop
+    docs: [10-building-golden-datasets]
+    question: What question mix does this project's golden set use?
+    answer: 31 single-hop, 8 multi-hop, 6 tricky, and 6 comparative questions.
+
+  - id: q20
+    type: single-hop
+    docs: [10-building-golden-datasets]
+    question: What is contamination in a golden dataset and who does it flatter?
+    answer: Contamination happens when questions are written with the corpus vocabulary in mind, which flatters lexical retrievers; questions should be written from the reader's perspective.
+
+  - id: q21
+    type: single-hop
+    docs: [11-latency-and-cost]
+    question: Which component dominates end-to-end RAG latency?
+    answer: LLM generation, at hundreds of milliseconds to seconds — typically 90% or more of total latency.
+
+  - id: q22
+    type: single-hop
+    docs: [11-latency-and-cost]
+    question: What is the input versus output price ratio for gpt-4o-mini?
+    answer: $0.15 per million input tokens versus $0.60 per million output tokens — output is 4x the input price.
+
+  - id: q23
+    type: single-hop
+    docs: [12-multi-hop-questions]
+    question: Why does a single retrieval step fail on multi-hop questions?
+    answer: The top-k is dominated by chunks matching the most salient keyword, usually hop one, so the chunks needed for hop two never make the cut.
+
+  - id: q24
+    type: single-hop
+    docs: [12-multi-hop-questions]
+    question: How should multi-hop retrieval be scored in evaluation?
+    answer: A multi-hop hit requires every required document to appear in the context; counting any hop found as success flatters half-answering pipelines.
+
+  - id: q25
+    type: single-hop
+    docs: [13-graph-rag]
+    question: What are the two families of GraphRAG?
+    answer: Knowledge-graph indexes (LlamaIndex style) that expand question entities to neighbors and chunks, and community-summary GraphRAG (Microsoft style) that partitions the graph and answers from community summaries.
+
+  - id: q26
+    type: single-hop
+    docs: [13-graph-rag]
+    question: What does this project's graph retriever do at query time?
+    answer: It finds the question's entities, expands one hop to related entities, collects the chunks attached to them, and merges them with the vector ranking using RRF.
+
+  - id: q27
+    type: single-hop
+    docs: [14-agentic-rag]
+    question: What are the five decisions in an agentic RAG loop?
+    answer: Route (retrieval needed?), plan the query, retrieve, judge sufficiency, and stop or continue.
+
+  - id: q28
+    type: single-hop
+    docs: [14-agentic-rag]
+    question: What is the hard part of agentic RAG?
+    answer: "Stop conditions — agents fail by looping instead of stopping, so they need a maximum step count, an answerability check, or a confidence threshold."
+
+  - id: q29
+    type: single-hop
+    docs: [15-self-rag]
+    question: What do the four Self-RAG reflection tokens mean?
+    answer: retrieve (is retrieval needed), isrel (is this chunk relevant), issup (is the claim supported), isuse (is the answer useful).
+
+  - id: q30
+    type: single-hop
+    docs: [15-self-rag]
+    question: How does CRAG grade retrievals and what does each grade trigger?
+    answer: CRAG grades retrieval as correct, ambiguous, or incorrect; ambiguous triggers refinement, and incorrect triggers re-retrieval or an external fallback.
+
+  - id: q31
+    type: multi-hop
+    docs: [02-chunking-strategies, 08-parent-document-retrieval]
+    question: The chunking document presents small-to-big as a chunking strategy; which retrieval-stage technique does the parent-document document say combines best with it?
+    answer: A cross-encoder reranker.
+
+  - id: q32
+    type: multi-hop
+    docs: [07-reranking, 02-chunking-strategies]
+    question: The reranking document says no reranker can fix chunking errors. What does the chunking document call the single highest-leverage knob in a RAG pipeline?
+    answer: Chunking quality.
+
+  - id: q33
+    type: multi-hop
+    docs: [06-query-transformation, 11-latency-and-cost]
+    question: How many LLM calls does HyDE cost per query, and how does the latency document describe the cost of smart retrieval techniques generally?
+    answer: One extra LLM call; the latency document describes every smart retrieval technique as a loan of tokens.
+
+  - id: q34
+    type: multi-hop
+    docs: [03-embeddings-and-vector-space, 05-bm25-and-hybrid-retrieval]
+    question: The embeddings document describes an offline fallback embedder. Which retrieval index would that fallback weaken the most, and why?
+    answer: Vector search, because hashing-TFIDF embeddings are lexical rather than semantic.
+
+  - id: q35
+    type: multi-hop
+    docs: [12-multi-hop-questions, 13-graph-rag]
+    question: The multi-hop document recommends graph-guided retrieval. How does this project's graph implementation actually perform that retrieval?
+    answer: By expanding the question's entities one hop, collecting the chunks attached to those entities, and merging them with the vector ranking using RRF.
+
+  - id: q36
+    type: multi-hop
+    docs: [09-evaluation-metrics, 15-self-rag]
+    question: How does the evaluation document implement faithfulness, and what does the Self-RAG document add to the same idea?
+    answer: Faithfulness is implemented with an LLM judge scoring each answer claim against the context; Self-RAG adds prompted reflection-token critiques that trigger re-retrieval.
+
+  - id: q37
+    type: multi-hop
+    docs: [14-agentic-rag, 10-building-golden-datasets]
+    question: The agentic document says a router saves retrieval tokens on queries that need no retrieval. What kind of golden-set questions test the same behavior?
+    answer: Unanswerable questions in the tricky subset, which test the "I don't know" behavior.
+
+  - id: q38
+    type: multi-hop
+    docs: [04-vector-stores-and-indexes, 10-building-golden-datasets]
+    question: What staleness failure mode does the vector-stores document warn about, and what does the golden-datasets document say happens to golden answers when the knowledge base changes?
+    answer: Answers quietly referencing deleted facts when the index is not rebuilt; golden answers can themselves become wrong and must be refreshed.
+
+  - id: q39
+    type: tricky
+    docs: []
+    question: What is the budget of the marketing division?
+    answer: The corpus does not contain this information; a correct pipeline should say it does not know.
+
+  - id: q40
+    type: tricky
+    docs: []
+    question: Which managed vector database does the documentation recommend for production?
+    answer: The corpus makes no production database recommendation; it only notes FAISS as an ANN library and uses in-memory search at its scale.
+
+  - id: q41
+    type: tricky
+    docs: []
+    question: How do I deploy this project to AWS Lambda?
+    answer: The corpus does not cover deployment; a correct pipeline should say it does not know.
+
+  - id: q42
+    type: tricky
+    docs: [13-graph-rag]
+    question: Is GraphRAG always better than naive RAG?
+    answer: No. GraphRAG helps on relational, multi-hop, and corpus-level questions but adds latency and rarely changes single-hop answers.
+
+  - id: q43
+    type: tricky
+    docs: [11-latency-and-cost]
+    question: What is the price per million tokens of the large OpenAI embedding model?
+    answer: The corpus only lists gpt-4o-mini generation prices, not embedding model prices; a correct pipeline should not invent a number.
+
+  - id: q44
+    type: tricky
+    docs: [05-bm25-and-hybrid-retrieval]
+    question: When combining BM25 and HNSW, what is the standard fusion constant?
+    answer: "The fusion constant belongs to RRF, not to HNSW — RRF uses k = 60. The question mixes two unrelated techniques."
+
+  - id: q45
+    type: comparative
+    docs: [02-chunking-strategies]
+    question: "Compare fixed-size and recursive character chunking — what is the essential difference?"
+    answer: Fixed chunking splits at a uniform size regardless of boundaries, while recursive chunking splits on a hierarchy of separators — paragraphs, sentences, words — keeping natural boundaries intact more often.
+
+  - id: q46
+    type: comparative
+    docs: [02-chunking-strategies]
+    question: What is the trade-off between small and large chunks?
+    answer: Small chunks give precision and focused vectors but lose context and split answers; large chunks preserve context but dilute embedding signal and burn prompt tokens.
+
+  - id: q47
+    type: comparative
+    docs: [05-bm25-and-hybrid-retrieval]
+    question: When should one choose BM25 over vector search and vice versa?
+    answer: BM25 for exact tokens like identifiers and error codes; vector search for paraphrase and topical similarity. A real documentation corpus mixes both, which is the argument for hybrid.
+
+  - id: q48
+    type: comparative
+    docs: [06-query-transformation]
+    question: Compare multi-query and HyDE on cost and risk.
+    answer: Both add LLM calls, but multi-query also runs N retrieval passes; HyDE risks confident wrong guesses from the model, while multi-query fails more gracefully across formulations.
+
+  - id: q49
+    type: comparative
+    docs: [13-graph-rag]
+    question: Compare LlamaIndex-style knowledge-graph indexes with Microsoft community-summary GraphRAG.
+    answer: KG indexes expand question entities to neighboring chunks and stay lightweight; community-summary GraphRAG partitions the graph into communities, summarizes each with an LLM, and answers corpus-wide questions at much higher indexing cost.
+
+  - id: q50
+    type: comparative
+    docs: [14-agentic-rag, 15-self-rag]
+    question: Compare where agentic RAG and Self-RAG place their critique step.
+    answer: Agentic RAG critiques the retrieval and plans before generating; Self-RAG critiques the draft answer after generating and may re-retrieve. Corrective RAG sits between, grading retrieval before generation.
+
+  - id: q51
+    type: single-hop
+    docs: [16-token-budgets-and-prompt-templates]
+    question: Why does the prompt template separate context from the question?
+    answer: Separating CONTEXT and QUESTION makes the boundary between retrieved material and the user's instruction unambiguous, which defends against grounding errors and prompt injection, and asking for citations keeps answers verifiable against chunks.

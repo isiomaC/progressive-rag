@@ -1,1 +1,3 @@
-numpy>=1.26
+# Core deps (pinned together — see note below)
+numpy==1.26.4
+pyyaml==6.0.1

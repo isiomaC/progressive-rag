@@ -1,4 +1,12 @@
 # Real semantic embeddings + cross-encoder reranker.
-# The project automatically falls back to a built-in hashing-TFIDF embedder
-# if this package (or the model download) is unavailable.
-sentence-transformers>=3.0
+# NOTE: this stack must be installed on Python 3.12 on an Intel Mac —
+# PyTorch has no macOS x86_64 wheels after 2.2.2, and torch 2.2.2 is
+# compiled against NumPy 1.x, hence the pins below.
+# The project falls back to a hashing-TFIDF embedder if these are missing.
+torch==2.2.2
+numpy==1.26.4
+scipy==1.12.0
+scikit-learn==1.4.2
+transformers==4.44.2
+huggingface-hub==0.24.7
+sentence-transformers==2.7.0
