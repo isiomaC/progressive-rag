@@ -1,0 +1,14 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Data caches (rebuilt on demand)
+data/cache/
+
+# Env
+.env
+
+# OS
+.DS_Store

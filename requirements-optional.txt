@@ -1,0 +1,4 @@
+# Real semantic embeddings + cross-encoder reranker.
+# The project automatically falls back to a built-in hashing-TFIDF embedder
+# if this package (or the model download) is unavailable.
+sentence-transformers>=3.0
