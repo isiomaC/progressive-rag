@@ -46,11 +46,19 @@ rerun.
 
 See `site/index.html` and `docs/FINDINGS.md` for full numbers. In short:
 
-- **Chunking is the highest-leverage knob.** Semantic and parent-child chunking
-  beat fixed-size by a wide margin on answer quality for the same retriever.
-- **Reranking buys the most per millisecond** of any Phase 3 technique;
-  HyDE and multi-query help on hard queries but cost LLM calls.
-- **Multi-hop questions are where single-shot retrieval breaks** — parent-doc
-  and graph-guided retrieval recover some of the gap.
-- **GraphRAG / agentic patterns only pay off** on relational and multi-step
-  questions; on single-hop questions they add latency for zero gain.
+- **Chunking is the highest-leverage knob.** Fixed windows cut 25% of corpus
+  sentences in half; sentence-aware recursive chunking lifts MRR +18% and
+  NDCG +14% with the same retriever, and semantic chunking beats fixed on
+  answer quality exactly on the questions fixed chunking damages.
+- **Reranking buys the most per millisecond.** The cross-encoder reranker
+  is the reliable Phase 3 win (+40% MRR, +7% correctness) — while HyDE lost
+  28 points of recall when its guesses missed, and multi-query added
+  nothing. Cost: ~1.3s CPU per query, everything else sub-10ms.
+- **Multi-hop questions expose retrieval's ceiling** — correctness drops
+  from 18.6 (single-hop) to 11.1 (multi-hop), and the composed/looping
+  variants (HyDE, advanced combo, agentic) *hurt* multi-hop on this corpus:
+  precision beats re-retrieval.
+- **GraphRAG / agentic patterns are specialists, not upgrades.** Net flat
+  to slightly negative here — they pay off on relational and multi-step
+  workloads, which this small corpus mostly doesn't have. Measuring that
+  honestly is the finding.

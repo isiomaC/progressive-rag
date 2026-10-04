@@ -162,7 +162,7 @@ def _page(css: str, data: str, phase_order: str, phase_labels: str, phase_colors
 
   <h2>Multi-hop questions <span style="color:var(--muted);font-size:13px;">— where single-shot retrieval breaks</span></h2>
   <div class="grid split">
-    <div class="panel"><div class="chart-title">Doc recall@5 on the multi-hop questions, by variant</div><div id="chart-mh"></div></div>
+    <div class="panel"><div class="chart-title">Multi-hop complete rate — fraction of multi-hop questions where ALL required docs made the top-5</div><div id="chart-mh"></div></div>
     <div class="panel"><div class="chart-title">Single-hop vs multi-hop, baseline</div><div id="chart-mhgap"></div></div>
   </div>
 
@@ -296,7 +296,7 @@ function grouped(el, groups, series, opts = {{}}) {{
       const h = Math.max(1, (H - padT - padB) * (v / maxV));
       out += `<rect x="${{x}}" y="${{H - padB - h}}" width="${{bw - 2}}" height="${{h}}" rx="3" fill="${{s.color}}" opacity="0.9"><title>${{s.name}}: ${{pct(v)}}</title></rect>`;
     }});
-    out += `<text x="${{cx}}" y="${{H - 8}}" text-anchor="middle">${{g}}</text>`;
+    out += `<text x="${{cx}}" y="${{H - 8}}" text-anchor="middle">${{opts.label ? opts.label(g) : g}}</text>`;
   }});
   el.innerHTML = `<svg viewBox="0 0 ${{W}} ${{H}}">${{out}}</svg>`;
 }}
@@ -316,10 +316,11 @@ document.getElementById("chunk-why").innerHTML =
    configuration pairs them.`;
 
 // ---------- retrieval chart ----------
-const retrs = ["retr-vector","retr-bm25","retr-hybrid","retr-multi-query","retr-hyde","retr-rerank","retr-hybrid-rerank"].map(n => byName[n]);
-grouped(document.getElementById("chart-retr"), retrs.map(v => v.name),
+const retrs = ["retr-vector","retr-bm25","retr-hybrid","retr-multi-query","retr-hyde","retr-rerank","retr-hybrid-rerank"].map(n => byName[n]).filter(Boolean);
+grouped(document.getElementById("chart-retr"), retrs,
   [ {{ name:"doc recall@5", color:"#58a6ff", value:v => m(v,"doc_recall") }},
-    {{ name:"answer correctness", color:"#d29922", value:v => m(v,"answer_correctness") }} ]);
+    {{ name:"answer correctness", color:"#d29922", value:v => m(v,"answer_correctness") }} ],
+  {{ label: v => v.name }});
 document.getElementById("legend-retr").innerHTML =
   `<span><i style="background:#58a6ff"></i>document recall@5 (did we fetch the right docs?)</span>
    <span><i style="background:#d29922"></i>answer correctness (is the final answer right?)</span>`;
@@ -352,9 +353,9 @@ reranking spends compute instead of tokens, agentic loops spend both — per <i>
 
 // ---------- multi-hop ----------
 hbar(document.getElementById("chart-mh"), sortedV(),
-  v => byType(v, "multi-hop", "doc_recall"),
+  v => byType(v, "multi-hop", "multi_hop_complete"),
   {{ label: v => v.name, color: v => phColor(v) }});
-const shBase = byType(base, "single-hop", "doc_recall"), mhBase = byType(base, "multi-hop", "doc_recall");
+const shBase = byType(base, "single-hop", "doc_recall"), mhBase = byType(base, "multi-hop", "multi_hop_complete");
 document.getElementById("chart-mhgap").innerHTML = `<div class="big" style="margin:6px 0">${{pct(shBase)}} → ${{pct(mhBase)}}</div>
 <p class="note">The baseline's document recall collapses from single-hop to multi-hop questions, because one
 top-k pass is dominated by the most salient keyword (hop one). Parent-doc, graph and agentic variants recover
@@ -362,7 +363,7 @@ part of the gap — see the chart on the left. Golden answers list <i>every</i> 
 hit counts only when all of them are in the context.</p>`;
 
 // ---------- phase 6 cards ----------
-function deltaPct(v) {{ return (byType(v, "multi-hop", "doc_recall") - mhBase) >= 0 ? "+" + ((byType(v, "multi-hop", "doc_recall") - mhBase)*100).toFixed(0) + " pts" : ((byType(v, "multi-hop", "doc_recall") - mhBase)*100).toFixed(0) + " pts"; }}
+function deltaPct(v) {{ return (byType(v, "multi-hop", "multi_hop_complete") - mhBase) >= 0 ? "+" + ((byType(v, "multi-hop", "multi_hop_complete") - mhBase)*100).toFixed(0) + " pts" : ((byType(v, "multi-hop", "multi_hop_complete") - mhBase)*100).toFixed(0) + " pts"; }}
 document.getElementById("phase6cards").innerHTML = [
   card("6.1 · Advanced combo", "Composition beats any single trick",
     `<div class="big">${{pct(m(adv,"answer_correctness"))}} <span style="font-size:14px;color:var(--muted)">correctness</span></div>
@@ -372,10 +373,11 @@ document.getElementById("phase6cards").innerHTML = [
      <p>Entity links catch the second hop that keyword/vector ranking misses. On single-hop questions the graph rarely changes the answer — it is a relational specialist, not a default upgrade.</p>`, "#3fb950"),
   card("6.3 · Agentic RAG", "Loops pay off only when they change the answer",
     `<div class="big">${{pct(byType(agentic,"multi-hop","doc_recall"))}} <span style="font-size:14px;color:var(--muted)">multi-hop doc recall</span> <span class="delta up">${{deltaPct(agentic)}} vs baseline</span></div>
-     <p>Route → rewrite → retrieve → critique → re-retrieve. The router saves retrieval on no-context queries; the loop earns its cost on multi-step questions. Stop conditions are the hard part — without them agents loop forever.</p>`, "#f778ba"),
+     <p>Route → rewrite → retrieve → critique → re-retrieve. Mean ${{agentic.agent_stats ? agentic.agent_stats.mean_steps.toFixed(1) : "—"}} retrieval steps per question;
+     ${{agentic.agent_stats ? agentic.agent_stats.n_no_retrieval : "—"}} questions routed past retrieval entirely. The loop earns its cost on multi-step questions — stop conditions are the hard part.</p>`, "#f778ba"),
   card("6.4 · Self-RAG", "Critique the draft, then decide",
     `<div class="big">${{pct(byType(selfrag,"tricky","faithfulness"))}} <span style="font-size:14px;color:var(--muted)">tricky-question faithfulness</span></div>
-     <p>Generate → critique context support → re-retrieve once → answer "I don't know" rather than hallucinate. See the Self-RAG panel below for how many questions it declined.</p>`, "#ff7b72"),
+     <p>Generate → critique context support → re-retrieve once → answer "I don't know" rather than hallucinate. Declined ${{selfrag.agent_stats ? selfrag.agent_stats.n_declined : "—"}} questions.</p>`, "#ff7b72"),
 ].join("");
 
 // ---------- self-rag panel ----------
@@ -411,6 +413,25 @@ document.getElementById("challenge-cards").innerHTML = [
     `<div class="big">${{pct(mhBase)}} <span style="font-size:14px;color:var(--muted)">baseline multi-hop recall</span></div>
      <p class="note">Low similarity scores + missing keyword overlap flag bad retrieval <i>before</i> the LLM runs — the trigger for Self-RAG re-retrieval and "I don't know" answers.</p>`),
 ].join("");
+const bi = R.challenges.boundary_integrity;
+if (bi) {{
+  document.getElementById("challenge-cards").insertAdjacentHTML("beforeend",
+   card("Boundary integrity", "How much each chunker damages information",
+    `<div class="big">${{(bi.fixed.fraction_intact*100).toFixed(0)}}% <span style="font-size:14px;color:var(--muted)">sentences intact, fixed-size</span></div>
+     <p class="note">recursive ${{(bi.recursive.fraction_intact*100).toFixed(0)}}% · semantic ${{(bi.semantic.fraction_intact*100).toFixed(0)}}% · parent-child ${{(bi.parent_child.fraction_intact*100).toFixed(0)}}%.
+     ${{bi.fixed.sentences_split}} corpus sentences get cut in half by fixed windows — an answer starting in one
+     chunk and ending in the next is information no retriever can recover. ${{bi.note}}</p>`));
+}}
+const cd = R.challenges.chunk_damage;
+if (cd) {{
+  document.getElementById("challenge-cards").insertAdjacentHTML("beforeend",
+   card("Chunk damage → answer quality", "The smoking gun",
+    `<div class="big">${{pct(cd.correctness_damaged_subset.fixed)}} → <span class="up">${{pct(cd.correctness_damaged_subset.semantic)}}</span>
+     <span style="font-size:14px;color:var(--muted)">fixed vs semantic correctness on the ${{cd.n_damaged_by_fixed}} questions fixed chunking damages</span></div>
+     <p class="note">On the ${{cd.n_intact_under_fixed}} questions where fixed windows happen to keep the answer whole,
+     correctness is ${{pct(cd.correctness_intact_subset.fixed)}} (fixed) vs ${{pct(cd.correctness_intact_subset.semantic)}} (semantic) — nearly tied.
+     The damage is question-specific: ${{cd.note}}</p>`));
+}}
 
 // ---------- kb panel ----------
 document.getElementById("kb-panel").innerHTML = `
@@ -443,6 +464,12 @@ let rows = sortedV().map(v => {{
   ${{cols.map(c => `<td class="${{bests[c] ? "win" : ""}}">${{(m(v,c)*100).toFixed(1)}}</td>`).join("")}}</tr>`;
 }}).join("");
 document.getElementById("full-table").innerHTML = th + rows;
+document.getElementById("full-table").insertAdjacentHTML("afterend",
+ `<p class="note">Faithfulness reads 100% across variants in offline mode by construction: the extractive
+ generator answers with sentences lifted from the retrieved context, so every answer is trivially supported.
+ It becomes discriminative with a live LLM — rerun with <code>--llm deepseek</code>/<code>--llm openai</code>
+ (add <code>--judge</code> for LLM-judge scores). The tricky-question breakdown below still separates the
+ variants, because declined answers ("I don't know") break the extractive pattern.</p>`);
 
 // ---------- heatmap ----------
 const qids = Object.keys(V[0].per_question);
@@ -484,8 +511,8 @@ and the docs that contain it. Every variant is scored against this same set.</p>
 <p><b>Metrics:</b> retrieval — hit rate, precision/recall@k, MRR, NDCG, RAGAS-style context precision/recall
 (both chunk- and document-level). Generation — faithfulness (lexical support proxy), answer relevancy,
 answer correctness (token F1 vs golden); LLM-judge variants activate automatically with an API key.</p>
-<p><b>Chunking:</b> fixed 100w/20w overlap · recursive (paragraph→sentence→word) · semantic (sentence-buffer,
-90th-percentile break) · parent-child (50w children / 250w parents). Retrieval k = ${{meta.k}} everywhere.</p>
+<p><b>Chunking:</b> fixed 60w/10w overlap · recursive (paragraph→sentence→word) · semantic (sentence-buffer,
+90th-percentile break) · parent-child (40w children / 150w parents). Retrieval k = ${{meta.k}} everywhere.</p>
 <p><b>Reproduce:</b> <code>pip install -r requirements.txt -r requirements-optional.txt</code> then
 <code>python scripts/run_experiments.py</code> (add <code>--llm deepseek</code> or <code>--llm openai</code> with a key
 in <code>.env</code>). This page is regenerated by <code>python site/build_report.py</code>.</p>

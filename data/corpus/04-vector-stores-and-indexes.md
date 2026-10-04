@@ -45,3 +45,25 @@ document means removing or replacing its chunks. Staleness is one of the
 classic RAG failure modes: if the knowledge base changes and the index is not
 rebuilt, answers quietly reference deleted facts. The knowledge-base update
 experiment in Phase 5 of this project measures exactly this effect.
+
+## What an update actually touches
+
+A single document edit has a surprisingly large blast radius in a RAG
+system, because three derived artifacts all become stale at once: the
+chunks (and their embeddings), the lexical index, and any golden
+evaluation entries that reference the old text. Updating only the source
+markdown while leaving the index in place is the classic "silent failure"
+— the system keeps answering from a corpus that no longer exists. The
+discipline that prevents this is an index-rebuild step tied to the
+document's content hash: if the hash changes, the index rebuilds.
+
+## Choosing index infrastructure
+
+The decision tree is short. Under about ten thousand chunks: numpy
+brute-force is exact, fast, and has zero dependencies — this project's
+choice. Between ten thousand and a million: HNSW in FAISS or a hosted
+vector database. Beyond that: the problem is distributed systems, not
+retrieval. The retrieval *quality* is identical across all three tiers;
+only latency and infrastructure change. Teams that adopt a vector database
+early do it for the operational features — replication, filtering, tenancy
+— not for accuracy.

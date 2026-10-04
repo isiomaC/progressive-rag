@@ -42,3 +42,24 @@ question. Flagging these lets the pipeline either re-retrieve, answer "I
 don't know", or log the case for dataset fixes. The Phase 5 challenge lab
 forces bad retrieval deliberately and measures how much answer quality
 degrades, to calibrate what "bad" looks like numerically.
+
+## Anatomy of a good golden entry
+
+A golden entry is four things: a question written from the reader's
+perspective, a hand-written ideal answer, the list of documents that
+contain the answer, and the concrete chunk ids resolved against a specific
+chunking strategy (because chunk boundaries move between strategies, the
+resolution is re-derived per strategy — see the architecture document).
+The question types are deliberately mixed so that a pipeline cannot game
+one style:
+
+- single-hop questions test whether one retrieval pass finds one answer,
+- multi-hop questions test whether the context can contain two documents
+  at once,
+- tricky questions test honesty — some have no answer in the corpus, some
+  are misleading, some mix two unrelated techniques,
+- comparative questions test whether the answer synthesizes rather than
+  echoes.
+
+A pipeline that scores well on all four types is a pipeline that retrieves,
+synthesizes, and knows when to stop.

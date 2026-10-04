@@ -42,3 +42,30 @@ A strong pattern is small-to-big plus a cross-encoder reranker: the
 reranker's precision fixes which children survive, and the parent mapping
 fixes how much context the surviving children bring. In this project's
 experiments, that combination is the best single-hop configuration.
+
+## Why retrieval precision rises with small chunks
+
+A 250-word chunk is an average of many topics, so its embedding is an
+average vector — close to everything, decisive about nothing. A 50-word
+child is usually about one thing, so its vector is a sharp point that
+matches a precise query tightly and rejects loosely related text. The
+counterpart risk is coverage: a small child can be *too* narrow, missing
+queries phrased from a slightly different angle, and short texts embed
+with more variance because there is less signal to average. The parent
+mapping is what makes the trade acceptable — retrieval can afford to be
+aggressive when context completeness is guaranteed downstream.
+
+## Small-to-big vs window retrieval
+
+Both patterns answer the same problem, differently:
+
+- **Small-to-big** formalizes two granularities with an explicit mapping;
+  parents are stable units, so the same parent always accompanies the same
+  children, and evaluation can score parent-level context directly.
+- **Window retrieval** expands each hit by neighboring text at query time,
+  which needs no second index but produces context that varies with what
+  else happened to be retrieved.
+
+Small-to-big is the better fit for evaluation and debugging because the
+context is reproducible; window retrieval is the lighter production hack.
+This project implements small-to-big and scores its parents directly.

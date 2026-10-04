@@ -43,3 +43,27 @@ When the cross-encoder model is unavailable (offline mode), this project
 falls back to a lexical reranker — a weighted blend of BM25 and vector
 similarity. It recovers exact-token matches the vector score missed, but it
 cannot judge paraphrase quality the way a cross-encoder can.
+
+## Reranking under the microscope
+
+What the cross-encoder actually changes is *rank order within the
+shortlist*, not membership. The retriever decides which 50 chunks get a
+chance; the reranker decides which 5 reach the prompt. This division of
+labor has a practical consequence: reranking cannot compensate for a
+retriever that never found the right neighborhood — a retrieval miss at
+rank 200 stays a miss. The retrievers that matter are therefore the ones
+with high *recall* over a wide window (hybrid), while reranking buys
+*precision* on the final five.
+
+## Choosing a reranker
+
+- Local small cross-encoder (ms-marco MiniLM): free, CPU-friendly, tens of
+  milliseconds per pair, no privacy concerns. This project's choice.
+- bge-reranker: stronger, still local, heavier on CPU.
+- API rerankers (Cohere): strongest and easiest, but every query leaves
+  your machine and costs money per call.
+
+The decision mirrors the embedding decision: local until the quality gap
+is provable, API when the corpus outgrows CPU patience. In both cases the
+swap is one class behind a small interface, which is exactly how this
+project's rerankers are built.

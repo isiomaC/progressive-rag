@@ -38,3 +38,24 @@ When the cross-encoder reranker is unavailable, this project reranks with a
 lexical scorer: a blend of normalized BM25 and vector similarity. It is
 cheaper and weaker than a cross-encoder, but it still improves over raw
 vector ranking by recovering exact-token matches.
+
+## Why fusion needs ranks, not scores
+
+Vector similarity is cosine (roughly -1 to 1). BM25 scores are unbounded
+and grow with query length. Averaging the two directly is meaningless —
+one index always drowns the other. Reciprocal rank fusion sidesteps the
+problem entirely by discarding magnitudes and keeping only order: each
+list contributes 1/(k + rank), and a chunk must simply appear near the top
+of at least one list to survive. That is the entire trick, and it is why
+RRF is the default merge everywhere in this project.
+
+## Failure mode: fusion dilution
+
+RRF has a known weakness worth measuring: it *includes*, it never
+*excludes*. If a bad signal — a misleading query reformulation, a
+wrong-neighborhood HyDE guess — appears in one of the fused lists, its
+chunks still enter the merged ranking and can push genuinely relevant
+chunks out of the top-k. This is exactly why composing too many
+transformations before fusion can *lower* quality, and why the strongest
+configurations fuse at most two high-quality lists and then rerank the
+merged candidates with a real relevance model.

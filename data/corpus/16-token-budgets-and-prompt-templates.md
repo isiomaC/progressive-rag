@@ -14,7 +14,7 @@ citations, so every answer is verifiable against a chunk.
 Every chunk inserted into the prompt costs input tokens. The budget is a
 real design decision:
 
-- top-5 chunks of 100 words ≈ 500 words of context ≈ 700 tokens per query,
+- top-5 chunks of 60 words ≈ 300 words of context ≈ 420 tokens per query,
 - reranking lets you spend the same budget on *better* chunks instead of
   *more* chunks,
 - parent-document retrieval spends the same budget on *complete* chunks
@@ -36,7 +36,7 @@ get in), and reranking (their order).
 ## Where the budget actually goes
 
 For a 50-question evaluation like this project's, the input tokens spent on
-context dominate the generation tokens: 50 questions times 700 tokens of
-context is already 35k input tokens before any answer is written. Techniques
+context dominate the generation tokens: 50 questions times ~420 tokens of
+context is already ~21k input tokens before any answer is written. Techniques
 that expand retrieval (multi-query, agentic loops) multiply this; techniques
 that compress or improve selection (reranking, small-to-big) do not.

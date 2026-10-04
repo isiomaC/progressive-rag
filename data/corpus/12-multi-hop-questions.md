@@ -36,3 +36,26 @@ Multi-hop evaluation needs per-hop ground truth: the golden entry lists all
 documents that must be retrieved, and a multi-hop hit is scored only when
 every required document appears in the context. Counting "any hop found" as
 success flatters pipelines that answer half a question.
+
+## Why some multi-hop questions hide
+
+Not every two-document question looks multi-hop. Consider "how does the
+chunking document's recommendation interact with the reranking document's
+warning?" — it names two documents explicitly, and a retriever can often
+cheat by matching the document titles. The harder cases name neither
+document: "which two techniques does the project pair for its strongest
+configuration?" requires knowing that the answer spans the parent-document
+and reranking documents without either being named in the question. Golden
+sets should include both flavors, because title-matching questions
+overstate the retriever's real multi-hop ability. This project's eight
+multi-hop questions mix named and unnamed hops for exactly this reason.
+
+## What the numbers should show
+
+The honest expectation for a multi-hop benchmark is a visible gap: single-hop
+document recall high, multi-hop document recall clearly lower, and the gap
+shrinking as pipelines add parent-document context, graph expansion, or
+agentic re-retrieval. If the gap does not exist, either the multi-hop
+questions are too easy (title-matching) or the corpus is too small for hops
+to land in different documents. The report compares per-type metrics for
+every variant so this gap is visible rather than assumed.

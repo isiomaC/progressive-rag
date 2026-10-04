@@ -25,7 +25,7 @@ items:
     type: single-hop
     docs: [02-chunking-strategies]
     question: What chunk sizes does the small-to-big pattern use for children and parents?
-    answer: About 250 words for children and about 1024 words for parents in production corpora, scaled down to 50-word children and 250-word parents in this lab because its corpus is small.
+    answer: About 250 words for children and about 1024 words for parents in production corpora, scaled down to 40-word children and 150-word parents in this lab because its corpus is small.
 
   - id: q05
     type: single-hop

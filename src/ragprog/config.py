@@ -15,15 +15,16 @@ PRICING = {
 }
 
 DEFAULT_CHUNK = dict(
-    # Sizes are scaled to this small (~10k word) corpus. Production corpora
-    # typically use 500/50; here 100/20 gives ~150+ chunks to compare over.
-    fixed_size=100,
-    fixed_overlap=20,
-    recursive_size=100,
-    recursive_overlap=20,
+    # Sizes are scaled to this small (~8k word) corpus. Production corpora
+    # typically use 500/50; here 60/10 gives ~150 chunks to compare over and
+    # makes fixed-size boundary splits actually observable.
+    fixed_size=60,
+    fixed_overlap=10,
+    recursive_size=60,
+    recursive_overlap=10,
     semantic_percentile=90,
-    child_size=50,
-    parent_size=250,
+    child_size=40,
+    parent_size=150,
     retrieval_k=5,
     rerank_candidates=50,
 )

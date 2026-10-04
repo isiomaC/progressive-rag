@@ -47,3 +47,34 @@ Every transformation is an LLM call before retrieval even starts. On a
 budget, the order to adopt is: rewrite (cheapest), then multi-query, then
 HyDE (riskiest). The latency and cost experiment in this project measures
 each technique's added milliseconds and tokens.
+
+## Why transformations fail
+
+Each transformation has a characteristic failure mode, and knowing them
+makes the experiments readable:
+
+- **Rewrite** fails by dropping the essential term — "why does the
+  reranker document mention cross-encoders?" rewritten as "cross-encoders"
+  loses the provenance constraint the question actually carried.
+- **Multi-query** fails by producing variants that are paraphrases of each
+  other rather than genuinely different angles — three near-identical
+  queries return three near-identical lists and the merge changes nothing.
+- **HyDE** fails when the model's guessed answer is confidently wrong —
+  the hypothetical document embeds in the wrong neighborhood and drags the
+  retrieval with it. The risk is asymmetric: HyDE either helps a lot or
+  hurts a lot, which is why production systems route it selectively
+  instead of applying it to every query.
+
+The measurable signature of a failing transformation is *worse than the
+no-transformation baseline* on document recall — our HyDE variant shows
+exactly this.
+
+## Choosing between them
+
+The decision is per-corpus, not general. For corpora with rich, consistent
+vocabulary, rewriting alone captures most of the gain. For corpora with
+heterogeneous writing styles (docs from many authors), multi-query's
+reformulations cover more of the vocabulary spread. HyDE is worth testing
+only when questions are long and documents are descriptive prose — the
+closer questions are to keywords, the less there is for the hypothetical
+document to add.

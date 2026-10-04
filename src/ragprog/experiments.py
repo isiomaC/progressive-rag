@@ -80,6 +80,7 @@ def _evaluate_variant(
     usage_total = Usage()
     lat_retr: list[float] = []
     lat_gen: list[float] = []
+    ctx_words: list[int] = []
 
     for item in golden:
         llm_usage_before = Usage(llm.usage.prompt_tokens, llm.usage.completion_tokens, llm.usage.n_calls)
@@ -94,6 +95,7 @@ def _evaluate_variant(
 
         got_chunks = [Chunk(id=s.id, doc_id=s.doc_id, text=s.text, start=0, end=len(s.text), parent_id=s.parent_id) for s in scored]
         context = "\n\n".join(c.text for c in got_chunks)
+        ctx_words.append(sum(len(c.text.split()) for c in got_chunks))
         t0 = time.perf_counter()
         result = generator.generate(item.question, got_chunks)
         lat_gen.append((time.perf_counter() - t0) * 1000)
@@ -145,7 +147,7 @@ def _evaluate_variant(
         },
         "cost": {
             **usage_total.to_dict(),
-            "context_words_per_query": sum(len(c.text.split()) for q in golden for c in []) if False else None,
+            "context_words_median": statistics.median(ctx_words) if ctx_words else 0,
             "usd": usage_total.cost(price) if not llm.is_offline else 0.0,
             "llm": llm.name,
         },
@@ -255,6 +257,8 @@ def run_experiments(cfg: Config, llm: LLM | None = None, limit: int | None = Non
             rel, golden, generator, llm, k, meta))
 
     for name, retriever, title, desc in [
+        ("retr-vector", VectorRetriever(idx_rec).retrieve, "Vector top-k (recursive chunks)",
+         "The Phase 3 reference: same retriever as the baseline, on recursive chunks."),
         ("retr-bm25", BM25Retriever(idx_rec).retrieve, "BM25 (keyword) retrieval",
          "Okapi BM25 on recursive chunks. Exact tokens only — no semantics."),
         ("retr-hybrid", HybridRetriever(idx_rec).retrieve, "Hybrid BM25 + vector (RRF)",
@@ -295,13 +299,82 @@ def run_experiments(cfg: Config, llm: LLM | None = None, limit: int | None = Non
         ("self-rag", selfrag, "Corrective / Self-RAG",
          "Generate → critique context support → re-retrieve or answer 'I don't know'.", "6-selfrag"),
     ]:
+        _run_agent.logs = {}
         variants.append(_evaluate_variant(
             name, phase, title, desc,
             lambda q, k_, a=agent: _run_agent(a, q, k_),
             recursive, rel_rec, golden, generator, llm, k, meta))
+        logs = dict(_run_agent.logs)
+        variant = variants[-1]
+        n_steps = [e["n_steps"] for e in logs.values() if isinstance(e, dict)]
+        for qid, entry in logs.items():
+            if isinstance(entry, dict) and qid in variant["per_question"]:
+                variant["per_question"][qid].update(
+                    {"n_steps": entry["n_steps"], "step_log": entry["step_log"],
+                     "used_retrieval": entry["used_retrieval"]})
+        variant["agent_stats"] = {
+            "mean_steps": _mean(n_steps),
+            "n_no_retrieval": sum(1 for e in logs.values() if isinstance(e, dict) and not e["used_retrieval"]),
+            "n_declined": sum(1 for qid in variant["per_question"]
+                              if "don't know" in variant["per_question"][qid]["answer"].lower()),
+        }
 
     challenges = _run_challenges(cfg, llm, generator, docs, golden,
                                  idx_rec, idx_fixed, rel_rec, embedder, meta)
+
+    # ---- targeted chunk-damage analysis: questions whose supporting
+    # corpus sentences get split by fixed chunking but survive intact under
+    # semantic chunking — and their answer correctness under each chunker ----
+    from .corpus import split_sentences
+    from .eval_metrics import bigram_coverage
+
+    def supporting_sentences(q):
+        cands = []
+        for d in docs:
+            if d.id not in q.docs:
+                continue
+            for s in split_sentences(d.text):
+                if len(s.split()) >= 6:
+                    cands.append((bigram_coverage(q.answer, s), s))
+        cands.sort(reverse=True)
+        return [s for _, s in cands[:2]]
+
+    def intact(sentence: str, chunks: list[Chunk]) -> bool:
+        norm = " ".join(sentence.split())
+        return any(norm in " ".join(c.text.split()) for c in chunks)
+
+    damaged_fixed, ok_fixed = [], []
+    for q in golden:
+        supp = supporting_sentences(q)
+        if not supp:
+            continue
+        if all(intact(s, fixed) for s in supp):
+            ok_fixed.append(q.id)
+        elif all(intact(s, semantic) for s in supp):
+            damaged_fixed.append(q.id)
+
+    def correctness_on(variant_name: str, qids: list[str]) -> float:
+        v = next(x for x in variants if x["name"] == variant_name)
+        vals = [v["per_question"][qid]["answer_correctness"] for qid in qids if qid in v["per_question"]]
+        return _mean(vals)
+
+    challenges["chunk_damage"] = {
+        "n_damaged_by_fixed": len(damaged_fixed),
+        "n_intact_under_fixed": len(ok_fixed),
+        "damaged_question_ids": damaged_fixed,
+        "correctness_damaged_subset": {
+            "fixed": correctness_on("chunk-fixed", damaged_fixed),
+            "recursive": correctness_on("chunk-recursive", damaged_fixed),
+            "semantic": correctness_on("chunk-semantic", damaged_fixed),
+        },
+        "correctness_intact_subset": {
+            "fixed": correctness_on("chunk-fixed", ok_fixed),
+            "semantic": correctness_on("chunk-semantic", ok_fixed),
+        },
+        "note": "On questions whose supporting sentences are cut by fixed windows "
+                "(but whole under semantic chunking), fixed-size chunking loses "
+                "answer quality — the mechanism behind 'chunking matters'.",
+    }
 
     results = {
         "meta": meta,
@@ -436,6 +509,36 @@ def _run_challenges(cfg, llm, generator, docs, golden, idx_rec, idx_fixed,
     out["multi_hop"] = {
         "note": "Per-variant multi-hop metrics are in results.variants[].metrics.by_type.multi-hop. "
                 "Single-shot retrievers drop sharply on multi-hop; parent-doc, graph and agents recover some.",
+    }
+
+    # ---- 6. Boundary integrity: how much information each chunker damages ----
+    from .corpus import split_sentences
+
+    def integrity(chunker) -> dict:
+        chunks = [c for d in docs for c in chunker.chunk(d)]
+        by_doc: dict[str, list[str]] = {}
+        for c in chunks:
+            by_doc.setdefault(c.doc_id, []).append(" ".join(c.text.split()))
+        total = intact = 0
+        for d in docs:
+            for s in split_sentences(d.text):
+                if len(s.split()) < 4:
+                    continue
+                total += 1
+                norm = " ".join(s.split())
+                if any(norm in ct for ct in by_doc.get(d.id, [])):
+                    intact += 1
+        return {"fraction_intact": intact / total if total else 1.0,
+                "sentences_split": total - intact, "sentences_total": total}
+
+    out["boundary_integrity"] = {
+        "fixed": integrity(FixedChunker(cfg.chunk["fixed_size"], cfg.chunk["fixed_overlap"])),
+        "recursive": integrity(RecursiveChunker(cfg.chunk["recursive_size"], cfg.chunk["recursive_overlap"])),
+        "semantic": integrity(SemanticChunker(embedder, cfg.chunk["semantic_percentile"])),
+        "parent_child": integrity(ParentChildChunker(cfg.chunk["child_size"], cfg.chunk["parent_size"])),
+        "note": "Fraction of corpus sentences that survive intact inside a single chunk. "
+                "A sentence cut across chunks is information no retriever can recover — "
+                "this is the mechanism behind the chunking experiment results.",
     }
     return out
 

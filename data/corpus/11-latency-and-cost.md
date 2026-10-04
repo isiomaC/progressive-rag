@@ -41,3 +41,33 @@ tokens and estimated dollars per variant so the trade-off is explicit.
 - Reuse retrieved context across repeated similar questions where safe.
 - Prefer local models (MiniLM, small cross-encoder) for the cheap stages;
   reserve the paid LLM for generation.
+
+## Reading a latency budget
+
+A useful way to see the whole pipeline is as a fixed budget: retrieval can
+spend freely (it is cheap), generation is the one expensive line item, and
+everything between is optional debt. Concrete numbers from this project,
+measured on a laptop CPU:
+
+- query embedding ≈ single-digit ms,
+- vector and BM25 search ≈ milliseconds,
+- cross-encoder reranking of 50 candidates ≈ 1–2 seconds — the only
+  retrieval stage that registers,
+- offline extractive generation ≈ 1 ms — replace with a live LLM and this
+  becomes hundreds of ms to seconds, dwarfing everything.
+
+Two design rules follow. First, never measure retrieval quality by wall
+clock — optimize retrieval for *quality* and pay for it out of the
+millisecond budget. Second, if a technique (reranking) is your latency
+floor, reduce its input — rerank 20 candidates instead of 50 — before
+replacing it.
+
+## Cost per question, worked out
+
+For a typical question in this project: 5 chunks × ~60 words ≈ 300 words
+of context ≈ 420 input tokens, plus ~100 output tokens. At gpt-4o-mini
+prices that is about $0.00012 per question before any query
+transformations. Multi-query adds one LLM call plus more context; HyDE the
+same; an agentic loop multiplies both by its step count. The money story
+matches the latency story: generation dominates, and every "smart" stage is
+a small, visible loan against it.
